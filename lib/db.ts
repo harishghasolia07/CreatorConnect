@@ -37,12 +37,18 @@ async function connectDB() {
   if (!cached!.promise) {
     const opts = {
       bufferCommands: false,
-      serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
+      serverSelectionTimeoutMS: 10000, // 10 seconds timeout
       socketTimeoutMS: 45000,
+      maxPoolSize: 10, // Maintain up to 10 socket connections
+      minPoolSize: 5, // Maintain a minimum of 5 socket connections
+      connectTimeoutMS: 10000, // Give up initial connection after 10 seconds
+      heartbeatFrequencyMS: 10000, // Send a ping every 10 seconds
     };
 
     cached!.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
       return mongoose;
+    }).catch((error) => {
+      throw error;
     });
   }
 

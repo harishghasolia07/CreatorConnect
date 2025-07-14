@@ -1,13 +1,25 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// Initialize Gemini AI
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+// Initialize Gemini AI with error handling
+let genAI: GoogleGenerativeAI | null = null;
+try {
+    if (process.env.GEMINI_API_KEY) {
+        genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    }
+} catch (error) {
+    console.error('Failed to initialize Gemini AI:', error);
+}
 
 /**
  * Generate embeddings using Gemini's embedding model
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
     try {
+        if (!genAI) {
+            console.warn('Gemini AI not initialized, returning zero vector');
+            return new Array(768).fill(0);
+        }
+
         const model = genAI.getGenerativeModel({ model: 'embedding-001' });
         const result = await model.embedContent(text);
         return result.embedding.values;
@@ -80,6 +92,10 @@ export async function generateMatchExplanation(
     semanticScore: number
 ): Promise<string> {
     try {
+        if (!genAI) {
+            return `${creatorName} is a good match with a compatibility score of ${ruleBasedScore}/20. This creator's skills and experience align well with the project requirements.`;
+        }
+
         const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
         const prompt = `

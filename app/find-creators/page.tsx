@@ -20,9 +20,7 @@ export default function FindCreatorsPage() {
   const [briefId, setBriefId] = useState<string>('');
   const [aiEnabled, setAiEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [showResults, setShowResults] = useState(false);
-
-  const handleSubmitBrief = async (briefData: any) => {
+  const [showResults, setShowResults] = useState(false); const handleSubmitBrief = async (briefData: any) => {
     setLoading(true);
     setBriefTitle(briefData.title);
 
@@ -39,22 +37,17 @@ export default function FindCreatorsPage() {
 
       if (result.success) {
         // Use enhanced matches if available, fallback to traditional matches
-        const matchesToShow = result.enhancedMatches || result.matches || result.traditionalMatches;
+        const matchesToShow = result.enhancedMatches || result.matches || result.traditionalMatches || [];
         setMatches(matchesToShow);
         setBriefId(result.brief?._id || '');
         setAiEnabled(result.aiEnabled || false);
         setShowResults(true);
-
-        // Show AI enhancement message if enabled
-        if (result.aiEnabled) {
-          console.log('AI-enhanced matching enabled:', result.message);
-        }
       } else {
-        alert('Error: ' + result.error);
+        const errorMsg = result.error || 'Unknown error occurred';
+        alert('Error: ' + errorMsg);
       }
     } catch (error) {
-      console.error('Error submitting brief:', error);
-      alert('Failed to submit brief');
+      alert('Failed to submit brief. Please check your connection and try again.');
     } finally {
       setLoading(false);
     }

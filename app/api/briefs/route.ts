@@ -5,6 +5,7 @@ import Creator from '@/lib/models/Creator';
 import { rankMatches } from '@/lib/matcher';
 import { enhancedMatcher } from '@/lib/enhancedMatcher';
 import { optimizedMatcher } from '@/lib/optimizedMatcher';
+import { ENV_CONFIG } from '@/lib/env';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,73 +27,124 @@ export async function POST(request: NextRequest) {
       clientEmail
     } = body;
 
+    // Validate required fields
+    if (!title || !description || !location || !category || !budgetMax || !startDate || !endDate || !clientName || !clientEmail) {
+      return NextResponse.json(
+        { success: false, error: 'Missing required fields' },
+        { status: 400 }
+      );
+    }
+
+    // Validate location object
+    if (!location.city || !location.country) {
+      return NextResponse.json(
+        { success: false, error: 'Location must include city and country' },
+        { status: 400 }
+      );
+    }
+
     // Create new brief
     const brief = new Brief({
       title,
       description,
       location,
       category,
-      preferredStyles,
-      budgetMax,
+      preferredStyles: preferredStyles || [],
+      budgetMax: Number(budgetMax),
       startDate: new Date(startDate),
       endDate: new Date(endDate),
       clientName,
       clientEmail
     });
 
-    // Get all creators
-    const creators = await Creator.find({});
+    // Get all creators with error handling
+    const creators = await Creator.find({}).limit(100); // Limit to prevent timeout
+
+    if (creators.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'No creators found in database' },
+        { status: 404 }
+      );
+    }
 
     // Check if AI features should be enabled
-    const useAI = process.env.GEMINI_API_KEY ? true : false;
+    const useAI = ENV_CONFIG.isAiEnabled;
 
-    console.time('🚀 Total Matching Time');
+    let enhancedMatches: any[] = [];
+    let traditionalMatches: any[] = [];
 
-    // Use optimized matcher for better performance
-    const enhancedMatches = await optimizedMatcher.getTopMatches(creators, brief, 10, useAI);
+    try {
+      // Use optimized matcher for better performance
+      enhancedMatches = await optimizedMatcher.getTopMatches(creators, brief, 10, useAI);
 
-    // Also get traditional matches for comparison (fast fallback)
-    const traditionalMatches = rankMatches(creators, brief);
+      // Also get traditional matches for comparison (fast fallback)
+      traditionalMatches = rankMatches(creators, brief);
 
-    console.timeEnd('🚀 Total Matching Time');
+    } catch (matchError) {
+      // Fallback to traditional matching only
+      try {
+        traditionalMatches = rankMatches(creators, brief);
+        enhancedMatches = traditionalMatches.map(match => ({
+          creator: match.creator,
+          score: match.score,
+          ruleBasedScore: match.score,
+          semanticScore: 0,
+          explanation: match.explanation,
+          reasons: match.explanation || []
+        }));
+      } catch (fallbackError) {
+        enhancedMatches = [];
+        traditionalMatches = [];
+      }
+    }
 
     // Store enhanced matches in brief
     brief.matches = enhancedMatches.map(match => ({
       creatorId: match.creator._id,
       score: match.score,
-      explanation: match.aiExplanation || match.explanation
+      explanation: Array.isArray(match.explanation) ? match.explanation : (match.reasons || [])
     }));
 
-    await brief.save();
+    const savedBrief = await brief.save();
 
     // Return brief with populated creator data
-    const savedBrief = await Brief.findById(brief._id).populate('matches.creatorId');
+    const populatedBrief = await Brief.findById(savedBrief._id).populate('matches.creatorId');
 
     return NextResponse.json({
       success: true,
-      brief: savedBrief,
+      brief: populatedBrief,
       enhancedMatches: enhancedMatches.map(match => ({
         creator: match.creator,
         score: match.score,
-        ruleBasedScore: match.ruleBasedScore,
-        semanticScore: match.semanticScore,
-        explanation: match.aiExplanation || match.explanation,
-        reasons: match.reasons,
-        aiEnhanced: useAI && match.semanticScore > 0
+        ruleBasedScore: match.ruleBasedScore || match.score,
+        semanticScore: match.semanticScore || 0,
+        explanation: Array.isArray(match.explanation) ? match.explanation : (match.reasons || []),
+        reasons: match.reasons || [],
+        aiEnhanced: useAI && (match.semanticScore || 0) > 0
       })),
       traditionalMatches: traditionalMatches.map(match => ({
         creator: match.creator,
         score: match.score,
-        explanation: match.explanation
+        explanation: Array.isArray(match.explanation) ? match.explanation : [match.explanation || 'Basic match']
       })),
       aiEnabled: useAI,
-      message: useAI ? 'Matches generated using AI-enhanced algorithm' : 'Matches generated using rule-based algorithm'
+      message: useAI ? 'Matches generated using AI-enhanced algorithm' : 'Matches generated using rule-based algorithm',
+      stats: {
+        totalCreators: creators.length,
+        enhancedMatches: enhancedMatches.length,
+        traditionalMatches: traditionalMatches.length
+      }
     });
 
   } catch (error) {
-    console.error('Error creating brief:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+
     return NextResponse.json(
-      { success: false, error: 'Failed to create brief' },
+      {
+        success: false,
+        error: 'Failed to create brief',
+        details: process.env.NODE_ENV === 'development' ? errorMessage : undefined
+      },
       { status: 500 }
     );
   }
@@ -105,7 +157,6 @@ export async function GET() {
 
     return NextResponse.json({ success: true, briefs });
   } catch (error) {
-    console.error('Error fetching briefs:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to fetch briefs' },
       { status: 500 }

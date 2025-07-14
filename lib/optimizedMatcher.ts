@@ -234,11 +234,34 @@ export class OptimizedMatcher {
   }
 
   /**
-   * Get top N matches with performance optimization
+   * Get top N matches with performance optimization and error handling
    */
   async getTopMatches(creators: ICreator[], brief: any, limit: number = 10, useAI: boolean = true): Promise<OptimizedMatchResult[]> {
-    const allMatches = await this.findOptimizedMatches(creators, brief, useAI);
-    return allMatches.slice(0, limit);
+    try {
+      // Add timeout protection
+      const matchingPromise = this.findOptimizedMatches(creators, brief, useAI);
+      const timeoutPromise = new Promise<OptimizedMatchResult[]>((_, reject) =>
+        setTimeout(() => reject(new Error('Matching timeout')), 30000) // 30 second timeout
+      );
+
+      const allMatches = await Promise.race([matchingPromise, timeoutPromise]);
+      return allMatches.slice(0, limit);
+    } catch (error) {
+      console.error('Optimized matching failed, falling back to basic matching:', error);
+
+      // Fallback to simple rule-based matching
+      const { rankMatches } = await import('./matcher');
+      const basicMatches = rankMatches(creators, brief);
+
+      return basicMatches.slice(0, limit).map(match => ({
+        creator: match.creator,
+        score: match.score,
+        ruleBasedScore: match.score,
+        semanticScore: 0,
+        explanation: Array.isArray(match.explanation) ? match.explanation.join('. ') : 'Basic compatibility match',
+        reasons: Array.isArray(match.explanation) ? match.explanation : [match.explanation || 'Basic match']
+      }));
+    }
   }
 }
 
