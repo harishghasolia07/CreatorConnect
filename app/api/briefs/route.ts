@@ -120,7 +120,8 @@ export async function POST(request: NextRequest) {
         semanticScore: match.semanticScore || 0,
         explanation: Array.isArray(match.explanation) ? match.explanation : (match.reasons || []),
         reasons: match.reasons || [],
-        aiEnhanced: useAI && (match.semanticScore || 0) > 0
+        aiEnhanced: useAI && (match.semanticScore || 0) > 0,
+        aiExplanation: match.aiExplanation
       })),
       traditionalMatches: traditionalMatches.map(match => ({
         creator: match.creator,

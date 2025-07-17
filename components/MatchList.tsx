@@ -28,6 +28,7 @@ interface Match {
   explanation: string[] | string;
   reasons?: string[];
   aiEnhanced?: boolean;
+  aiExplanation?: string;
 }
 
 interface MatchListProps {
@@ -111,7 +112,13 @@ export default function MatchList({ matches, briefTitle, briefId, aiEnabled }: M
 
       <div className="grid gap-6">
         {matches.map((match, index) => {
-          const { creator, score, explanation } = match;
+          const { creator, score, explanation, reasons, aiEnhanced } = match;
+
+          // Use AI explanation if available and AI is enabled, otherwise use traditional explanations
+          const displayExplanation = aiEnhanced && match.aiExplanation
+            ? match.aiExplanation
+            : explanation;
+
           return (
             <Card key={creator._id} className="overflow-hidden shadow-sm border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 card-hover">
               <CardHeader className="pb-4">
@@ -212,11 +219,11 @@ export default function MatchList({ matches, briefTitle, briefId, aiEnabled }: M
 
                 <div>
                   <h4 className="font-semibold text-gray-900 dark:text-white mb-2">Why This Match?</h4>
-                  {typeof explanation === 'string' ? (
-                    <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">{explanation}</p>
+                  {typeof displayExplanation === 'string' ? (
+                    <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">{displayExplanation}</p>
                   ) : (
                     <ul className="space-y-1">
-                      {explanation.map((reason, idx) => (
+                      {displayExplanation.map((reason, idx) => (
                         <li key={idx} className="text-sm text-gray-600 dark:text-gray-300 flex items-start">
                           <span className="w-2 h-2 bg-blue-500 dark:bg-blue-400 rounded-full mt-2 mr-2 flex-shrink-0"></span>
                           {reason}

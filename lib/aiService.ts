@@ -93,13 +93,13 @@ export async function generateMatchExplanation(
 ): Promise<string> {
     try {
         if (!genAI) {
-            return `${creatorName} is a good match with a compatibility score of ${ruleBasedScore}/20. This creator's skills and experience align well with the project requirements.`;
+            return `${creatorName} is a strong match due to their relevant experience and skills that align with your project needs. Their expertise makes them well-suited for this type of work.`;
         }
 
         const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
         const prompt = `
-You are an AI matchmaking assistant. Explain why this creator is a good match for the project brief.
+As an expert creative matchmaker, analyze why this creator is perfect for this project brief and write a compelling, specific explanation.
 
 PROJECT BRIEF: "${briefDescription}"
 
@@ -107,19 +107,73 @@ CREATOR PROFILE:
 - Name: ${creatorName}
 - Bio: ${creatorBio}
 - Skills: ${creatorSkills.join(', ')}
+- Rule-based compatibility: ${ruleBasedScore}/20 points
+- Style/semantic match: ${semanticScore.toFixed(1)}/10 points
 
-SCORING:
-- Rule-based score: ${ruleBasedScore}/20
-- AI semantic score: ${semanticScore.toFixed(1)}/10
+TASK: Write a 2-3 sentence explanation that:
+1. Identifies specific skills/experience that match the project requirements
+2. Mentions style compatibility or creative approach alignment
+3. Explains why this creator stands out for THIS specific project
+4. Uses natural, engaging language (avoid generic phrases like "good match" or "relevant skills")
 
-Generate a concise, 2-3 sentence explanation of why this creator matches the project. Focus on specific skill overlaps, style compatibility, or experience relevance. Be natural and helpful.
+Example style: "Sarah's expertise in outdoor adventure photography and her proven track record shooting in challenging mountain conditions makes her ideal for your wilderness expedition documentary. Her portfolio demonstrates exactly the rugged, authentic storytelling approach you're seeking, while her technical skills with drone footage add the cinematic quality your project demands."
+
+Write a compelling explanation for ${creatorName}:
 `;
 
         const result = await model.generateContent(prompt);
         const response = await result.response;
-        return response.text().trim();
+        const explanation = response.text().trim();
+
+        // Validate that we got a meaningful response (not empty or too short)
+        if (explanation && explanation.length > 50 && !explanation.includes('good match')) {
+            return explanation;
+        } else {
+            // If the AI response is too generic, create a better fallback
+            return generateDetailedFallback(creatorName, creatorBio, creatorSkills, briefDescription, ruleBasedScore, semanticScore);
+        }
     } catch (error) {
         console.error('Error generating AI explanation:', error);
-        return `This creator matches your project with a combined score of ${(ruleBasedScore + semanticScore).toFixed(1)}. They have relevant skills and experience for your requirements.`;
+        // Create a detailed fallback instead of generic message
+        return generateDetailedFallback(creatorName, creatorBio, creatorSkills, briefDescription, ruleBasedScore, semanticScore);
     }
+}
+
+/**
+ * Generate a detailed fallback explanation when AI fails
+ */
+function generateDetailedFallback(
+    creatorName: string,
+    creatorBio: string,
+    creatorSkills: string[],
+    briefDescription: string,
+    ruleBasedScore: number,
+    semanticScore: number
+): string {
+    // Extract key terms from brief and creator
+    const briefLower = briefDescription.toLowerCase();
+    const bioLower = creatorBio.toLowerCase();
+
+    // Find specific skill matches
+    const matchingSkills = creatorSkills.filter(skill =>
+        briefLower.includes(skill.toLowerCase()) ||
+        skill.toLowerCase().split(' ').some(word => briefLower.includes(word))
+    );
+
+    // Build specific explanation
+    let explanation = `${creatorName}`;
+
+    if (matchingSkills.length > 0) {
+        explanation += ` specializes in ${matchingSkills.slice(0, 2).join(' and ')}, which directly aligns with your project requirements.`;
+    } else {
+        explanation += `'s experience and creative approach make them well-suited for your project.`;
+    }
+
+    if (semanticScore > 3) {
+        explanation += ` Their portfolio and style demonstrate strong compatibility with your creative vision.`;
+    } else if (ruleBasedScore > 10) {
+        explanation += ` They meet all the key criteria for location, budget, and technical requirements.`;
+    }
+
+    return explanation;
 }

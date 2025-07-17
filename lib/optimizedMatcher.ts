@@ -140,34 +140,42 @@ export class OptimizedMatcher {
   private async processAIScores(
     creators: ICreator[],
     brief: any,
-    timeout: number = 5000
+    timeout: number = 15000  // Increased timeout to 15 seconds
   ): Promise<Map<string, { semanticScore: number; explanation: string }>> {
     const results = new Map();
 
     const aiPromises = creators.map(async (creator) => {
       try {
-        const [semanticScore, explanation] = await Promise.race([
-          Promise.all([
-            generateSemanticScore(brief.description, creator.bio, creator.skills),
-            generateMatchExplanation(
-              brief.description,
-              creator.name,
-              creator.bio,
-              creator.skills,
-              this.calculateRuleBasedScore(creator, brief).score,
-              0 // Will be updated with actual semantic score
-            )
-          ]),
-          // Timeout fallback
-          new Promise<[number, string]>((_, reject) =>
-            setTimeout(() => reject(new Error('AI timeout')), timeout)
+        const ruleBasedScore = this.calculateRuleBasedScore(creator, brief).score;
+
+        // First generate the semantic score with longer timeout
+        const semanticScore = await Promise.race([
+          generateSemanticScore(brief.description, creator.bio, creator.skills),
+          new Promise<number>((_, reject) =>
+            setTimeout(() => reject(new Error('Semantic score timeout after 15s')), timeout)
+          )
+        ]);
+
+        // Then generate explanation with the actual semantic score and longer timeout
+        const explanation = await Promise.race([
+          generateMatchExplanation(
+            brief.description,
+            creator.name,
+            creator.bio,
+            creator.skills,
+            ruleBasedScore,
+            semanticScore
+          ),
+          new Promise<string>((_, reject) =>
+            setTimeout(() => reject(new Error('Explanation timeout after 15s')), timeout)
           )
         ]);
 
         results.set(String(creator._id), { semanticScore, explanation });
+        console.log(`✅ AI processing successful for ${creator.name}: semantic=${semanticScore.toFixed(1)}, explanation=${explanation.substring(0, 50)}...`);
       } catch (error) {
-        console.error(`AI processing failed for ${creator.name}:`, error);
-        // Fallback to rule-based only
+        console.error(`❌ AI processing failed for ${creator.name}:`, error);
+        // Fallback to rule-based only with empty explanation (will use fallback logic)
         results.set(String(creator._id), { semanticScore: 0, explanation: '' });
       }
     });
@@ -196,9 +204,9 @@ export class OptimizedMatcher {
       await this.batchEnsureEmbeddings(preFilteredCreators);
       console.timeEnd('🤖 Embedding updates');
 
-      // STEP 3: Parallel AI processing with timeout
+      // STEP 3: Parallel AI processing with longer timeout
       console.time('🧠 AI processing');
-      aiResults = await this.processAIScores(preFilteredCreators, brief, 5000); // 5 second timeout
+      aiResults = await this.processAIScores(preFilteredCreators, brief, 15000); // 15 second timeout
       console.timeEnd('🧠 AI processing');
     }
 
