@@ -101,8 +101,6 @@ export class OptimizedMatcher {
 
     if (creatorsNeedingEmbeddings.length === 0) return;
 
-    console.log(`🔄 Updating embeddings for ${creatorsNeedingEmbeddings.length} creators...`);
-
     // PARALLEL embedding generation
     const embeddingPromises = creatorsNeedingEmbeddings.map(async (creator) => {
       try {
@@ -116,7 +114,6 @@ export class OptimizedMatcher {
     });
 
     await Promise.all(embeddingPromises);
-    console.log(`✅ Embeddings updated!`);
   }
 
   /**
@@ -172,7 +169,6 @@ export class OptimizedMatcher {
         ]);
 
         results.set(String(creator._id), { semanticScore, explanation });
-        console.log(`✅ AI processing successful for ${creator.name}: semantic=${semanticScore.toFixed(1)}, explanation=${explanation.substring(0, 50)}...`);
       } catch (error) {
         console.error(`❌ AI processing failed for ${creator.name}:`, error);
         // Fallback to rule-based only with empty explanation (will use fallback logic)
@@ -194,7 +190,6 @@ export class OptimizedMatcher {
     console.time('📋 Rule-based filtering');
     const preFilteredCreators = this.preFilterCreators(creators, brief);
     console.timeEnd('📋 Rule-based filtering');
-    console.log(`🎯 Pre-filtered to ${preFilteredCreators.length} top candidates`);
 
     let aiResults = new Map();
 
@@ -236,7 +231,6 @@ export class OptimizedMatcher {
     const sortedResults = results.sort((a, b) => b.score - a.score);
 
     console.timeEnd('⚡ Optimized Matching');
-    console.log(`🏆 Returned ${sortedResults.length} optimized matches`);
 
     return sortedResults;
   }
