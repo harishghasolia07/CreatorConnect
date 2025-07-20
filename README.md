@@ -139,7 +139,7 @@ Powered by Google Gemini AI for intelligent, context-aware matching:
 - **AI-Generated Explanations**: Provides clear "Why This Match?" reasoning for each recommendation
 
 ### 🔄 Hybrid Score Calculation
-**Final Score = Rule-Based Score + (AI Semantic Score × 10)**
+**Final Score = Rule-Based Score + AI Semantic Score**
 
 This ensures both factual compatibility (budget, location, skills) and creative alignment (style, vision, approach).
 

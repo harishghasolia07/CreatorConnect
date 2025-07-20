@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
 import Creator from '@/lib/models/Creator';
 import { generateEmbedding } from '@/lib/aiService';
+import { ENV_CONFIG } from '@/lib/env';
 
 // Admin authentication key (in production, use environment variable)
 const ADMIN_KEY = process.env.ADMIN_SEED_KEY || 'admin123';

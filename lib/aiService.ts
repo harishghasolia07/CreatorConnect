@@ -1,13 +1,15 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { AI_CONFIG, TIMEOUTS } from './constants';
+import { ENV_CONFIG } from './env';
 
 // Initialize Gemini AI with error handling
 let genAI: GoogleGenerativeAI | null = null;
 try {
-    if (process.env.GEMINI_API_KEY) {
+    if (ENV_CONFIG.isAiEnabled && process.env.GEMINI_API_KEY) {
         genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     }
 } catch (error) {
-    console.error('Failed to initialize Gemini AI:', error);
+    console.error('❌ AI Initialization - Gemini AI setup failed:', error);
 }
 
 /**
@@ -17,16 +19,32 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     try {
         if (!genAI) {
             console.warn('Gemini AI not initialized, returning zero vector');
-            return new Array(768).fill(0);
+            return new Array(AI_CONFIG.EMBEDDING_DIMENSIONS).fill(0);
         }
 
-        const model = genAI.getGenerativeModel({ model: 'embedding-001' });
-        const result = await model.embedContent(text);
-        return result.embedding.values;
+        const model = genAI.getGenerativeModel({ model: AI_CONFIG.EMBEDDING_MODEL });
+
+        // Add timeout wrapper for consistency
+        const result = await Promise.race([
+            model.embedContent(text),
+            new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error('Embedding generation timeout')), TIMEOUTS.AI_OPERATION)
+            )
+        ]);
+
+        const embedding = result.embedding.values;
+
+        // Validate dimension - CONSISTENCY FIX
+        if (embedding.length !== AI_CONFIG.EMBEDDING_DIMENSIONS) {
+            console.warn(`⚠️ AI Service: Invalid embedding dimension: ${embedding.length}, expected ${AI_CONFIG.EMBEDDING_DIMENSIONS}`);
+            return new Array(AI_CONFIG.EMBEDDING_DIMENSIONS).fill(0);
+        }
+
+        return embedding;
     } catch (error) {
-        console.error('Error generating embedding:', error);
+        console.error('❌ AI Service - embedding generation failed:', error);
         // Return a zero vector as fallback
-        return new Array(768).fill(0);
+        return new Array(AI_CONFIG.EMBEDDING_DIMENSIONS).fill(0);
     }
 }
 
@@ -57,11 +75,15 @@ export function cosineSimilarity(vecA: number[], vecB: number[]): number {
 export async function generateSemanticScore(
     briefDescription: string,
     creatorBio: string,
-    creatorSkills: string[]
+    creatorSkills: string[],
+    creatorCategories?: string[]
 ): Promise<number> {
     try {
-        // Combine creator information for better matching
-        const creatorText = `${creatorBio} Skills: ${creatorSkills.join(', ')}`;
+        // Combine creator information for better matching - CONSISTENT with database storage
+        let creatorText = `${creatorBio} Skills: ${creatorSkills.join(', ')}`;
+        if (creatorCategories && creatorCategories.length > 0) {
+            creatorText += ` Categories: ${creatorCategories.join(', ')}`;
+        }
 
         // Generate embeddings for both texts
         const [briefEmbedding, creatorEmbedding] = await Promise.all([
@@ -75,7 +97,7 @@ export async function generateSemanticScore(
         // Convert to a score between 0 and 10 for our scoring system
         return Math.max(0, similarity * 10);
     } catch (error) {
-        console.error('Error calculating semantic score:', error);
+        console.error('❌ AI Service - semantic score calculation failed:', error);
         return 0;
     }
 }
@@ -96,7 +118,7 @@ export async function generateMatchExplanation(
             return `${creatorName} is a strong match due to their relevant experience and skills that align with your project needs. Their expertise makes them well-suited for this type of work.`;
         }
 
-        const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+        const model = genAI.getGenerativeModel({ model: AI_CONFIG.GENERATION_MODEL });
 
         const prompt = `
 As an expert creative matchmaker, analyze why this creator is perfect for this project brief and write a compelling, specific explanation.
@@ -133,7 +155,7 @@ Write a compelling explanation for ${creatorName}:
             return generateDetailedFallback(creatorName, creatorBio, creatorSkills, briefDescription, ruleBasedScore, semanticScore);
         }
     } catch (error) {
-        console.error('Error generating AI explanation:', error);
+        console.error(`❌ AI Service - match explanation generation for ${creatorName} failed:`, error);
         // Create a detailed fallback instead of generic message
         return generateDetailedFallback(creatorName, creatorBio, creatorSkills, briefDescription, ruleBasedScore, semanticScore);
     }

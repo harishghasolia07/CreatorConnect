@@ -1,5 +1,7 @@
 import { ICreator } from './models/Creator';
 import { generateSemanticScore, generateMatchExplanation, generateEmbedding } from './aiService';
+import { AI_CONFIG } from './constants';
+import { ENV_CONFIG } from './env';
 
 export interface MatchResult {
     creator: ICreator;
@@ -61,6 +63,21 @@ export class EnhancedMatcher {
             reasons.push(`Style Match (${styleMatches.length} matches)`);
         }
 
+        // Portfolio tag matching (0-3 points) - CONSISTENCY FIX
+        const portfolioTagMatches = briefStyles.filter((style: string) =>
+            creator.portfolio.some(portfolioItem =>
+                portfolioItem.tags.some(tag =>
+                    tag.toLowerCase().includes(style.toLowerCase()) ||
+                    style.toLowerCase().includes(tag.toLowerCase())
+                )
+            )
+        );
+
+        if (portfolioTagMatches.length > 0) {
+            score += Math.min(3, portfolioTagMatches.length);
+            reasons.push(`Portfolio Style Match (${portfolioTagMatches.length} matches)`);
+        }
+
         // Experience bonus (0-3 points)
         if (creator.experienceYears >= 5) {
             score += 3;
@@ -78,7 +95,7 @@ export class EnhancedMatcher {
      */
     private async ensureCreatorEmbedding(creator: ICreator): Promise<void> {
         // Check if embedding exists and is recent (within 30 days)
-        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        const thirtyDaysAgo = new Date(Date.now() - AI_CONFIG.EMBEDDING_CACHE_DAYS * 24 * 60 * 60 * 1000);
 
         if (!creator.embedding || !creator.lastEmbeddingUpdate || creator.lastEmbeddingUpdate < thirtyDaysAgo) {
             try {
@@ -89,7 +106,7 @@ export class EnhancedMatcher {
                 // Save the updated embedding to database
                 await creator.save();
             } catch (error) {
-                console.error('Error updating creator embedding:', error);
+                console.error(`❌ Enhanced Matcher - embedding update for ${creator.name} failed:`, error);
             }
         }
     }
@@ -107,7 +124,7 @@ export class EnhancedMatcher {
             let semanticScore = 0;
             let aiExplanation = '';
 
-            if (useAI && process.env.GEMINI_API_KEY) {
+            if (useAI && ENV_CONFIG.isAiEnabled && process.env.GEMINI_API_KEY) {
                 try {
                     // Ensure creator has embeddings
                     await this.ensureCreatorEmbedding(creator);
@@ -116,7 +133,8 @@ export class EnhancedMatcher {
                     semanticScore = await generateSemanticScore(
                         brief.description,
                         creator.bio,
-                        creator.skills
+                        creator.skills,
+                        creator.categories
                     );
 
                     // Generate AI explanation
@@ -129,7 +147,7 @@ export class EnhancedMatcher {
                         semanticScore
                     );
                 } catch (error) {
-                    console.error('Error calculating AI scores:', error);
+                    console.error(`❌ Enhanced Matcher - AI score calculation for ${creator.name} failed:`, error);
                     // Continue with rule-based only if AI fails
                 }
             }

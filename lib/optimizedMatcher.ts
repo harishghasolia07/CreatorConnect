@@ -1,5 +1,7 @@
 import { ICreator } from './models/Creator';
 import { generateSemanticScore, generateMatchExplanation, generateEmbedding } from './aiService';
+import { TIMEOUTS, AI_CONFIG, SCORING } from './constants';
+import { ENV_CONFIG } from './env';
 
 export interface OptimizedMatchResult {
   creator: ICreator;
@@ -92,9 +94,7 @@ export class OptimizedMatcher {
    * OPTIMIZATION 1: Batch process embeddings
    */
   private async batchEnsureEmbeddings(creators: ICreator[]): Promise<void> {
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-
-    // Find creators without recent embeddings
+    const thirtyDaysAgo = new Date(Date.now() - AI_CONFIG.EMBEDDING_CACHE_DAYS * 24 * 60 * 60 * 1000);    // Find creators without recent embeddings
     const creatorsNeedingEmbeddings = creators.filter(creator =>
       !creator.embedding || !creator.lastEmbeddingUpdate || creator.lastEmbeddingUpdate < thirtyDaysAgo
     );
@@ -109,7 +109,7 @@ export class OptimizedMatcher {
         creator.lastEmbeddingUpdate = new Date();
         await creator.save();
       } catch (error) {
-        console.error(`Failed to generate embedding for ${creator.name}:`, error);
+        console.error(`❌ Optimized Matcher - embedding generation for ${creator.name} failed:`, error);
       }
     });
 
@@ -119,7 +119,7 @@ export class OptimizedMatcher {
   /**
    * OPTIMIZATION 2: Fast rule-based pre-filtering
    */
-  private preFilterCreators(creators: ICreator[], brief: any, minScore: number = 2): ICreator[] {
+  private preFilterCreators(creators: ICreator[], brief: any, minScore: number = SCORING.MIN_FILTER_SCORE): ICreator[] {
     return creators
       .map(creator => ({
         creator,
@@ -137,7 +137,7 @@ export class OptimizedMatcher {
   private async processAIScores(
     creators: ICreator[],
     brief: any,
-    timeout: number = 15000  // Increased timeout to 15 seconds
+    timeout: number = TIMEOUTS.AI_OPERATION  // Use consistent timeout
   ): Promise<Map<string, { semanticScore: number; explanation: string }>> {
     const results = new Map();
 
@@ -147,7 +147,7 @@ export class OptimizedMatcher {
 
         // First generate the semantic score with longer timeout
         const semanticScore = await Promise.race([
-          generateSemanticScore(brief.description, creator.bio, creator.skills),
+          generateSemanticScore(brief.description, creator.bio, creator.skills, creator.categories),
           new Promise<number>((_, reject) =>
             setTimeout(() => reject(new Error('Semantic score timeout after 15s')), timeout)
           )
@@ -170,7 +170,7 @@ export class OptimizedMatcher {
 
         results.set(String(creator._id), { semanticScore, explanation });
       } catch (error) {
-        console.error(`❌ AI processing failed for ${creator.name}:`, error);
+        console.error(`❌ Optimized Matcher - AI processing for ${creator.name} failed:`, error);
         // Fallback to rule-based only with empty explanation (will use fallback logic)
         results.set(String(creator._id), { semanticScore: 0, explanation: '' });
       }
@@ -201,7 +201,7 @@ export class OptimizedMatcher {
 
       // STEP 3: Parallel AI processing with longer timeout
       console.time('🧠 AI processing');
-      aiResults = await this.processAIScores(preFilteredCreators, brief, 15000); // 15 second timeout
+      aiResults = await this.processAIScores(preFilteredCreators, brief, TIMEOUTS.AI_OPERATION);
       console.timeEnd('🧠 AI processing');
     }
 
@@ -243,13 +243,14 @@ export class OptimizedMatcher {
       // Add timeout protection
       const matchingPromise = this.findOptimizedMatches(creators, brief, useAI);
       const timeoutPromise = new Promise<OptimizedMatchResult[]>((_, reject) =>
-        setTimeout(() => reject(new Error('Matching timeout')), 30000) // 30 second timeout
+        setTimeout(() => reject(new Error('Matching timeout')), TIMEOUTS.FULL_MATCHING) // Use consistent timeout
       );
 
       const allMatches = await Promise.race([matchingPromise, timeoutPromise]);
       return allMatches.slice(0, limit);
     } catch (error) {
-      console.error('Optimized matching failed, falling back to basic matching:', error);
+      console.error('❌ Optimized Matcher - matching process failed:', error);
+      // Fallback to basic matching
 
       // Fallback to simple rule-based matching
       const { rankMatches } = await import('./matcher');

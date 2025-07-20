@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { TIMEOUTS } from './constants';
 
 const MONGODB_URI = process.env.MONGODB_URI;
 
@@ -37,11 +38,11 @@ async function connectDB() {
   if (!cached!.promise) {
     const opts = {
       bufferCommands: false,
-      serverSelectionTimeoutMS: 10000, // 10 seconds timeout
-      socketTimeoutMS: 45000,
+      serverSelectionTimeoutMS: TIMEOUTS.DATABASE_CONNECT,
+      socketTimeoutMS: TIMEOUTS.DATABASE_SOCKET,
       maxPoolSize: 10, // Maintain up to 10 socket connections
       minPoolSize: 5, // Maintain a minimum of 5 socket connections
-      connectTimeoutMS: 10000, // Give up initial connection after 10 seconds
+      connectTimeoutMS: TIMEOUTS.DATABASE_CONNECT, // Give up initial connection after configured time
       heartbeatFrequencyMS: 10000, // Send a ping every 10 seconds
     };
 
